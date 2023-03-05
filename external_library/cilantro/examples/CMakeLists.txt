@@ -1,0 +1,8 @@
+if(Pangolin_FOUND)
+  file(GLOB example_files ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+  foreach(example_file ${example_files})
+    get_filename_component(example_name ${example_file} NAME_WE)
+    add_executable(${example_name} ${example_file})
+    target_link_libraries(${example_name} ${PROJECT_NAME})
+  endforeach()
+endif()

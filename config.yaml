@@ -1,0 +1,57 @@
+###### Input ######
+event_data_format: "csv"      # "csv" is the only option implemented
+
+# Path to the text files containing the imu data 
+# and lidar data according to the format parameters above
+event_path: "../data/events.txt"
+calib_path: "../data/calib.txt"
+result_path: "../results/"
+############
+
+
+###### Camera parameters ######
+cam_width: 240
+cam_height: 180
+############
+
+###### Track parameters ######
+add_noise: 0.09                   # a little jitter on the event position helps
+                                  # the first few steps of the optimisation
+track_width: 30                     # diameter of the patch
+nb_state_opt: 5                     # number of GP inducing points per SE2 undistortion batch
+state_every_n_events: 250         # number of events between GP inducing points
+                                  # (batch size is nb_state_opt*state_every_n_events
+limit_track_length: 5.0             # length limit in seconds
+downsample: 600                   # simple downsample the events before motion correction
+                                  #(runs significantly faster but likely degraded
+                                  # performance: to be tested)
+                                  # Comment out to remove downsampling
+tracker_type: "homography_template" # Different variant as presented in the paper:
+                                    # "se2_only", "homography_frame", or
+                                    # "homography_template" (default)
+                                    # (only the last two or recommended
+############
+
+
+
+
+###### Track seeds
+feature_format: "tracks"                # "tracks" in the rpg eval format,
+                                        # "debug" for the "debug_x/y/t_start" as shown below
+feature_path: "../data/track_seeds.txt"   # path to the seed file
+time_offset: "1468940293.840967273"     # Time offset between the track seeds 
+                                        # and csv as a string to keep accuracy 
+                                        # (for example enabling using track seeds 
+                                        # generated using rosbag)
+
+###### Output
+write_events: true     # Write the event to files for the sake of later visualisation
+
+
+###### Debug ######
+# Seed to start a track
+debug_x_start: 120
+debug_y_start: 90
+debug_t_start: 13 
+only_one: false    # perform only motion compensation on first batch
+############

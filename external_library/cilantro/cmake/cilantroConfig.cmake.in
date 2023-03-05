@@ -1,0 +1,10 @@
+get_filename_component(PROJECT_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+# Library dependencies (contains definitions for IMPORTED targets)
+if(NOT TARGET @PROJECT_NAME@ AND NOT @PROJECT_NAME@_BINARY_DIR)
+  include("${PROJECT_CMAKE_DIR}/@PROJECT_NAME@Targets.cmake")
+  include(CMakeFindDependencyMacro)
+  find_dependency(Eigen3)
+  @DEPENDS_OpenMP@
+  @DEPENDS_Pangolin@
+endif()
