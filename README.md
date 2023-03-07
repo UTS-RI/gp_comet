@@ -2,8 +2,7 @@
 
 **G**aussian **P**rocess for **CO**mpentation of **M**otion for **E**vent-based **T**tracking
 
-This is the implementation of the IEEE ICRA2023 paper __Continuous-Time Gaussian Process Motion-Compensation for Event-vision Pattern Tracking with Distance Fields__ available at __Link to be provided soon__.
-
+This is the implementation of the IEEE ICRA2023 paper __Continuous-Time Gaussian Process Motion-Compensation for Event-vision Pattern Tracking with Distance Fields__ available [here](https://arxiv.org/abs/2303.02672).
 
 Given seeds (x,y,t), this piece of software performs motion compensation and pattern tracking using solely event data.
 
@@ -85,3 +84,4 @@ python visualise_track.py ../results/ id
 ```
 With `id` the number of the track you want to display.
 The file `requierements.txt` contains the dependencies for that script.
+
