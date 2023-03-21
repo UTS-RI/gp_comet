@@ -29,7 +29,7 @@ downsample: 600                   # simple downsample the events before motion c
 tracker_type: "homography_template" # Different variant as presented in the paper:
                                     # "se2_only", "homography_frame", or
                                     # "homography_template" (default)
-                                    # (only the last two or recommended
+                                    # (only the last two are recommended)
 ############
 
 
