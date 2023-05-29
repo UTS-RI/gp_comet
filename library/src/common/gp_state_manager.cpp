@@ -587,17 +587,17 @@ namespace celib
     }
 
 
-    void GpStateManager::addNormalisersToProblem(ceres::Problem& problem)
+    void GpStateManager::addNormalisersToProblem(ceres::Problem& problem) 
     {
         std::vector<std::vector<double*> > normaliser_state;
         std::vector<std::vector<int> > normaliser_size;
         std::vector<VecX> normaliser_ksKinv;
         std::vector<double*> state;
-        std::vector<bool> temp_used_ = used_;
+        std::vector<bool> temp_used = used_;
 
         for(int j = 0; j < used_.size(); ++j)
         {
-            if(temp_used_.at(j))
+            if(temp_used.at(j))
             {
                 std::vector<std::vector<double*> > normaliser_state;
                 std::vector<std::vector<int> > normaliser_size;
@@ -719,7 +719,7 @@ namespace celib
 
 
     // Set constant the state variables that have the closest timestamp to "time"
-    void GpStateManager::setConstantCloseTo(ceres::Problem& problem, const double time)
+    void GpStateManager::setConstantCloseTo(ceres::Problem& problem, const double time) const
     {
         // Get the timestamps of state variables that have been used
         std::vector<double> used_time;

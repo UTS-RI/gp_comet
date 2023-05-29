@@ -30,6 +30,8 @@ tracker_type: "homography_template" # Different variant as presented in the pape
                                     # "se2_only", "homography_frame", or
                                     # "homography_template" (default)
                                     # (only the last two are recommended)
+approx_only: false                # Turn to true to use only the lumped-matrix approximation
+                                  # for the SE2 GP motion compensation
 ############
 
 

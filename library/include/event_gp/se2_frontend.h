@@ -291,7 +291,8 @@ namespace celib
                 const double limit_track_length = std::numeric_limits<double>::max(),
                 const bool recenter_seeds = false,
                 const bool only_one = false,
-                const bool write_events = false
+                const bool write_events = false,
+                const bool approx_only = false
                 );
 
             bool isTrackInImage();
@@ -370,6 +371,7 @@ namespace celib
             const bool write_events_;
             const double max_length_;
             const int downsample_;
+            const bool approx_only_;
 
             // Hyper parameters
             HyperParam hyper_;
@@ -501,6 +503,7 @@ namespace celib
             std::string result_path_;
             bool only_one_;
             bool write_events_;
+            bool approx_only_;
 
             // Preloaded features (start of tracks)
             std::vector<Vec2> feature_px_list_;

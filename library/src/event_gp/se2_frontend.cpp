@@ -29,6 +29,8 @@ namespace celib
         track_width_ = readField<double>(config, "track_width", 20);
         recenter_seeds_ = readField<bool>(config, "recenter_seeds", false);
         downsample_ = readField<int>(config, "downsample", 0);
+        approx_only_ = readField<bool>(config, "approx_only", false);
+
 
 
         std::string feature_type = readRequiredField<std::string>(config, "feature_format");
@@ -116,7 +118,8 @@ namespace celib
                 max_track_length_,
                 recenter_seeds_,
                 only_one_,
-                write_events_
+                write_events_,
+                approx_only_
                 ));
         std::cout << "Start track " << id << std::endl;
         active_tracks_.emplace(new_track);
@@ -278,7 +281,8 @@ namespace celib
                 const double limit_track_length,
                 const bool recenter_seeds,
                 const bool only_one,
-                const bool write_events
+                const bool write_events,
+                const bool approx_only
                 ):
                     id_(id)
                     ,nb_event_opt_((nb_state_opt)*state_every)
@@ -309,6 +313,7 @@ namespace celib
                     , disp_str_("Track " + std::to_string(id))
                     , type_(type)
                     , recenter_(recenter_seeds)
+                    , approx_only_(approx_only)
     {
         origin_[0] = x;
         origin_[1] = y;
@@ -714,6 +719,16 @@ namespace celib
 
 
 
+    double getResidualCost(const ceres::CostFunction& cost_fun, const std::vector<double*>& state)
+    {
+        double cost = 0;
+        std::vector<double> residuals(cost_fun.num_residuals());
+        cost_fun.Evaluate(state.data(), residuals.data(), nullptr);
+        for(const auto& r: residuals) cost += r*r;
+        return cost;
+    }
+
+
     
     // Returns the undistorted events, the pose difference between the first and last event
     std::tuple<Mat3, bool> EventTrack::se2MotionOptimisation(
@@ -722,25 +737,76 @@ namespace celib
         std::vector<EventPtr> fixed_events;
         std::vector<double*> state;
         std::vector<int> state_size;
-        CostFunctionSe2FrontEnd* cost_function = new CostFunctionSe2FrontEnd(events, event_ids, fixed_events, state_manager, hyper_, state, false, downsample_);
+
+        bool valid = true;
+
+        double initial_cost = 0;
+
+        CostFunctionSe2FrontEnd* cost_function;
+
+        if(!approx_only_)
+        {
+            cost_function = new CostFunctionSe2FrontEnd(events, event_ids, fixed_events, state_manager, hyper_, state, false, downsample_);
+
+            initial_cost = getResidualCost(*cost_function, state);
+        }
+        {
+            CostFunctionSe2ApproxFrontEnd* cost_function_approx = new CostFunctionSe2ApproxFrontEnd(events, event_ids,state_manager, hyper_, state, false, 0);// downsample_);
 
 
-        ceres::Problem problem;
-        problem.AddResidualBlock(cost_function, NULL, state);
+            ceres::Problem problem_approx;
+            problem_approx.AddResidualBlock(cost_function_approx, NULL, state);
 
-        // Add normalisers to the problem (in the case of )
-        // and constant the previous states
-        state_manager.addNormalisersToProblem(problem);
-        state_manager.setConstantCloseTo(problem, event_ids.at(0));
+            // Add normalisers to the problem (in the case of )
+            // and constant the previous states
+            state_manager.addNormalisersToProblem(problem_approx);
+            state_manager.setConstantCloseTo(problem_approx, event_ids.at(0));
+
+
+            // Optimisation
+            ceres::Solver::Options options;
+            options.minimizer_progress_to_stdout = false;
+            options.function_tolerance = 1e-10;
+            options.max_num_iterations = 200;
+
+            ceres::Solver::Summary summary_approx;
+            ceres::Solve(options, &problem_approx, &summary_approx);
+            //std::cout << summary_approx.FullReport() << std::endl;
+
+            valid = (summary_approx.final_cost / summary_approx.initial_cost) < 0.975;
+
+        }
+
+        if(!approx_only_)
+        {
+            //CostFunctionSe2FrontEnd* cost_function = new CostFunctionSe2FrontEnd(events, event_ids, fixed_events, state_manager, hyper_, state, false, downsample_);
+
+            ceres::Problem problem;
+            problem.AddResidualBlock(cost_function, NULL, state);
+
+            // Add normalisers to the problem (in the case of )
+            // and constant the previous states
+            state_manager.addNormalisersToProblem(problem);
+            state_manager.setConstantCloseTo(problem, event_ids.at(0));
+            //state_manager.resetUsedFlags();
+
+
+            // Optimisation
+            ceres::Solver::Summary summary;
+            ceres::Solve(se2_opts_, &problem, &summary);
+            //std::cout << summary.FullReport() << std::endl;
+            
+
+
+            double final_cost = getResidualCost(*cost_function, state);
+            valid = (final_cost / initial_cost) < thr;
+
+            std::cout << "Initial cost = " << initial_cost << std::endl;
+            std::cout << "Final cost = " << final_cost << std::endl;
+        }
+
         state_manager.resetUsedFlags();
 
-
-        // Optimisation
-        ceres::Solver::Summary summary;
-        ceres::Solve(se2_opts_, &problem, &summary);
-        //std::cout << summary.FullReport() << std::endl;
-
-        bool valid = (summary.final_cost / summary.initial_cost) < thr;
 
         auto [rot_0, pos_0] = state_manager.getPoseRotVec(event_ids.at(0));
         auto [rot_1, pos_1] = state_manager.getPoseRotVec(event_ids.back());

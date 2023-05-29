@@ -23,7 +23,7 @@ namespace celib
         std::string reader_type = readRequiredField<std::string>(config, "event_data_format");
 
 
-        std::cout << "----- ImuReader: Loading the IMU data" << std::endl;
+        std::cout << "----- EventReader: Loading the Event data" << std::endl;
 
 
         if(reader_type == "csv")
@@ -42,7 +42,7 @@ namespace celib
             if(getline(calib_file, line))
             {
                 std::vector<double> values = stringToNumVector<double>(line, ' ');
-                if(values.size() != 9) throw std::runtime_error("Calibration file is not with the right format");
+                if(values.size() != 9) throw std::runtime_error("Calibration file is not with the right format (needs 9 values separated by a space)");
                 cam_mat_ = Mat3::Zero();
                 cam_mat_(0,0) = values.at(0);
                 cam_mat_(1,1) = values.at(1);

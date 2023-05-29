@@ -1,5 +1,6 @@
 # GP COMET
 
+
 **G**aussian **P**rocess for **CO**mpentation of **M**otion for **E**vent-based **T**tracking
 
 This is the implementation of the IEEE ICRA2023 paper __Continuous-Time Gaussian Process Motion-Compensation for Event-vision Pattern Tracking with Distance Fields__ available [here](https://arxiv.org/abs/2303.02672).
@@ -7,6 +8,7 @@ This is the implementation of the IEEE ICRA2023 paper __Continuous-Time Gaussian
 Given seeds (x,y,t), this piece of software performs motion compensation and pattern tracking using solely event data.
 
 
+__This code is not optimised. If you are interrested to make it run faster or to improve the performance, feel free to send me an email, I'll be happy to help and provide further insight.__
 
 ## How to compile
 
@@ -74,6 +76,9 @@ To run this software, you just need to unzip the sample data archive in place, a
 
 In its current state, the configuration file has the same parameters as used in the paper except for `downsample` (comment that line and you have the same parameters as in the evaluation section of the paper)
 
+EDIT 29/05/2023: This directory now includes a "preprocessing" step based on the lumped matrix approximation for the GP of the SE2 motion compensation. It seems to help convergences a bit. This approximation can be used on its own (as the main SE2 compensation mechanism) by switching the `approx_only` to `true` for fast computation (I did not evaluate the performance of the `approx_only` version other than qualitatively but it is definitely faster).
+
+
 
 ## Other utils
 
@@ -84,4 +89,5 @@ python visualise_track.py ../results/ id
 ```
 With `id` the number of the track you want to display.
 The file `requierements.txt` contains the dependencies for that script.
+
 

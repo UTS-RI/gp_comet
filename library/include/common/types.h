@@ -175,8 +175,8 @@ namespace celib{
         */
         Iterator selectIterator(const double& _time_stamp, const double& _time_tolerance);
 
-        T selectLastBefore(const double& _time_stamp);
-        T selectLastBeforeOrFirst(const double& _time_stamp);
+        T selectLastBefore(const double& _time_stamp) const;
+        T selectLastBeforeOrFirst(const double& _time_stamp) const;
 
         T selectFirstBefore(const double& _time_stamp, const double& _time_tolerance);
         
@@ -298,7 +298,7 @@ namespace celib{
     }
 
     template <typename T>
-    T Buffer<T>::selectLastBefore(const double& _time_stamp)
+    T Buffer<T>::selectLastBefore(const double& _time_stamp) const
     {
         // There is no element
         if (container_.empty())
@@ -313,7 +313,7 @@ namespace celib{
     }
 
     template <typename T>
-    T Buffer<T>::selectLastBeforeOrFirst(const double& _time_stamp)
+    T Buffer<T>::selectLastBeforeOrFirst(const double& _time_stamp) const
     {
         // There is no element
         if (container_.empty())

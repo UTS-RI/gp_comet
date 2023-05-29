@@ -62,6 +62,39 @@ namespace celib
 
 
 
+    class CostFunctionSe2ApproxFrontEnd: public ceres::CostFunction
+    {
+        private:
+            Mat2X events_xy_;
+            std::vector<IndexVec> rot_ids_;
+            std::vector<IndexVec> pos_ids_;
+            std::vector<VecX> ks_K_inv_;
+
+            std::vector<IndexVec> state_to_event_;
+            std::vector<int> state_size_;
+        
+            HyperParam xy_hyper_;
+
+
+        public:
+            CostFunctionSe2ApproxFrontEnd(
+                    const std::vector<EventPtr>& events,
+                    const std::vector<int>& event_ids,
+                    GpStateManager& state_manager,
+                    const HyperParam& hyper,
+                    std::vector<double*>& state_ptrs,
+                    const bool filter = false,
+                    const int downsample = 0
+                    );
+
+            virtual bool Evaluate(double const* const* parameters,
+                                        double* residuals,
+                                        double** jacobians) const;
+
+            bool testJacobian();
+
+    };
+
 
 
 

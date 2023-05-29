@@ -86,7 +86,7 @@ namespace celib
             void resetUsedFlags();
 
             void setConstantTill(ceres::Problem& problem, const double time);
-            void setConstantCloseTo(ceres::Problem& problem, const double time);
+            void setConstantCloseTo(ceres::Problem& problem, const double time) const;
 
         private:
             GpStateType type_;

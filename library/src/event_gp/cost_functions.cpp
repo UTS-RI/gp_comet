@@ -9,6 +9,8 @@
 
 #include "event_gp/cost_function.h"
 #include "event_gp/se2_frontend.h"
+#include "cilantro/core/kd_tree.hpp"
+#include "common/random.h"
 
 
 
@@ -156,8 +158,6 @@ namespace celib
 
         MatX& X = xy;
 
-
-
         // Compute the covariance matrix
         MatX K;
         std::vector<std::vector<Row4, Eigen::aligned_allocator<Row4> > > jacobian_K_storage;
@@ -252,14 +252,300 @@ namespace celib
             }
         }
 
-
-
         return true;
     }
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+    CostFunctionSe2ApproxFrontEnd::CostFunctionSe2ApproxFrontEnd(
+            const std::vector<EventPtr>& events_in,
+            const std::vector<int>& event_ids_in,
+            GpStateManager& state_manager,
+            const HyperParam& hyper,
+            std::vector<double*>& state_ptrs,
+            const bool filter,
+            const int downsample
+            )
+                : xy_hyper_(hyper)
+    {
+
+
+        std::vector<EventPtr> events;
+        std::vector<int> event_ids;
+
+        events = events_in;
+        event_ids = event_ids_in;
+
+        if(downsample > 0)
+        {
+            // Downsample the events to match 'downsample' but keep the first and last 20 events
+            std::vector<EventPtr> events_ds;
+            std::vector<int> event_ids_ds;
+            events_ds.reserve(downsample);
+            for(int i=0; i<20;++i)
+            {
+                events_ds.push_back(events.at(i));
+                event_ids_ds.push_back(event_ids.at(i));
+            }
+
+            std::vector<int> downsampled_ids = generateRandomIndexes(20, events.size()-20, downsample-40);
+            for(const auto& i: downsampled_ids)
+            {
+                events_ds.push_back(events.at(i));
+                event_ids_ds.push_back(event_ids.at(i));
+            }
+
+            for(int i=events.size()-20; i<events.size();++i)
+            {
+                events_ds.push_back(events.at(i));
+                event_ids_ds.push_back(event_ids.at(i));
+            }
+            events = events_ds;
+            event_ids = event_ids_ds;
+        }
+
+
+        // Cast the indexes to match the state_manager type
+        std::vector<double> event_time(event_ids.begin(), event_ids.end());
+
+        std::tie(state_ptrs, state_size_, rot_ids_, pos_ids_, ks_K_inv_) = state_manager.getStatePosePtrs(event_time);
+
+
+        // Fill the information needed by Ceres
+        state_to_event_.resize(state_ptrs.size());
+        set_num_residuals(event_time.size());
+        std::vector<int>* block_sizes = mutable_parameter_block_sizes();
+        for(const auto& s: state_size_) block_sizes->push_back(s);
+
+
+        // Store the event locations                
+        events_xy_.resize(2,events.size());
+        for(int i = 0; i < events.size(); ++i)
+        {
+            events_xy_(0,i) = events.at(i)->x;
+            events_xy_(1,i) = events.at(i)->y;
+
+            for(int j = 0; j < rot_ids_.at(i).size(); ++j)
+            {
+                state_to_event_.at(rot_ids_.at(i).at(j)).push_back(i);
+                state_to_event_.at(pos_ids_.at(i).at(j)).push_back(i);
+            }
+        }
+
+
+    }
+
+
+    bool CostFunctionSe2ApproxFrontEnd::Evaluate(double const* const* parameters,
+                                double* residuals,
+                                double** jacobians) const
+    {
+        // Store the jacobians of the reprojected events 
+        // with std::map< std::pair<event id, paramter block id>, d_xy_d_param_block
+        std::vector<std::vector<MatX> > jacobian_xy_storage(events_xy_.cols(), std::vector<MatX>(state_size_.size()));
+
+        // Store the reprojected events
+        MatX xy(2, events_xy_.cols());
+
+        // Reproject events in first time stamp.
+        //#pragma omp parallel for
+        for(int i = 0; i < events_xy_.cols(); ++i)
+        {
+            Vec2 pos = ceresParamToEigen(parameters, pos_ids_.at(i), ks_K_inv_.at(i), 2);
+            double rot = ceresParamToEigen(parameters, rot_ids_.at(i), ks_K_inv_.at(i), 1)(0);
+
+
+            if(jacobians != NULL)
+            {
+                Mat2 d_xy_d_pos;
+                Vec2 d_xy_d_rot;
+                Vec2 temp_xy;
+                std::tie(temp_xy, d_xy_d_pos, d_xy_d_rot) = se2TransJacobian(events_xy_.col(i), pos, rot);
+                xy.col(i) = temp_xy;
+                for(int j = 0; j < rot_ids_.at(i).size(); ++j)
+                {
+                    if(jacobians[rot_ids_.at(i).at(j)] != NULL)
+                    {
+
+                        jacobian_xy_storage[i][rot_ids_.at(i).at(j)] = d_xy_d_rot*ks_K_inv_.at(i)(j);
+                    }
+                    if(jacobians[pos_ids_.at(i).at(j)] != NULL)
+                    {
+                        jacobian_xy_storage[i][pos_ids_.at(i).at(j)] = d_xy_d_pos*ks_K_inv_.at(i)(j);
+                    }
+                }
+            }
+            else
+            {
+                xy.col(i) = se2Trans(events_xy_.col(i), pos, rot);
+            }
+        }
+
+
+        VecX Y(xy.cols());
+        Y.setOnes();
+
+        MatX& X = xy;
+
+        // Create a kd-tree in 2D for the events in xy using cilantro
+        std::vector<Eigen::Vector2f> xy_vec;
+        xy_vec.reserve(xy.cols());
+        for(int i = 0; i < xy.cols(); ++i)
+        {
+            xy_vec.push_back(xy.col(i).cast<float>());
+        }
+        cilantro::KDTree2f<> kd_tree(xy_vec);
+
+        // For each event, find the closest events in a radius of 5 times the lenghtscale
+        std::vector<std::vector<int> > closest_events(xy.cols());
+        float radius = 20.0*xy_hyper_.l2*xy_hyper_.l2;
+        for(int i = 0; i < xy.cols(); ++i)
+        {
+            cilantro::NeighborSet<float> nn = kd_tree.radiusSearch(xy_vec[i], radius);
+            for (int j = 0; j < nn.size(); j++) {
+                closest_events[i].push_back(nn[j].index);
+            }
+        }
+
+        // Compute the covariance vector for each event and its neighbours
+        for(int i = 0; i < xy.cols(); ++i)
+        {
+            MatX X_local(2, closest_events[i].size());
+            for(int j = 0; j < closest_events[i].size(); ++j)
+            {
+                X_local.col(j) = xy.col(closest_events[i].at(j));
+            }
+            MatX temp_xy(2,1);
+            temp_xy = xy.col(i);
+            MatX k = seKernelXD(X_local, temp_xy, xy_hyper_.l2, xy_hyper_.sf2);
+            double k_sum = k.sum();
+            residuals[i] = 1.0/k_sum;
+
+            if(jacobians != NULL)
+            {
+                double factor = -1.0/(k_sum*k_sum);
+                // Loop through all the entries in the covariance vector
+                for(int h = 0; h < closest_events[i].size(); ++h)
+                {
+                    Row4 d_k_d_xi = seKernelJacobians(X_local.col(h), xy.col(i), xy_hyper_.l2, xy_hyper_.sf2);
+                    
+                    int c = closest_events[i].at(h);
+                    // Loop through all the parameter blocks
+                    for(int j = 0; j < rot_ids_.at(i).size(); ++j)
+                    {
+                        if(jacobians[rot_ids_.at(i).at(j)] != NULL)
+                        {
+                            if(h==0)
+                            {
+                                jacobians[rot_ids_.at(i).at(j)][i] = 0.0;
+                            }
+                            else
+                            {
+                                MatX temp = (d_k_d_xi.segment<2>(0)*jacobian_xy_storage[c][rot_ids_.at(c).at(j)] + d_k_d_xi.segment<2>(2)*jacobian_xy_storage[i][rot_ids_.at(i).at(j)]);
+                                jacobians[rot_ids_.at(i).at(j)][i] += factor*temp(0,0);
+                            }
+
+                        }
+                        if(jacobians[pos_ids_.at(i).at(j)] != NULL)
+                        {
+                            if(h==0)
+                            {
+                                jacobians[pos_ids_.at(i).at(j)][2*i] = 0.0;
+                                jacobians[pos_ids_.at(i).at(j)][2*i+1] = 0.0;
+                            }
+                            else
+                            {
+                                MatX temp = (d_k_d_xi.segment<2>(0)*jacobian_xy_storage[c][pos_ids_.at(c).at(j)] + d_k_d_xi.segment<2>(2)*jacobian_xy_storage[i][pos_ids_.at(i).at(j)]);
+                                jacobians[pos_ids_.at(i).at(j)][2*i] += factor*temp(0,0);
+                                jacobians[pos_ids_.at(i).at(j)][2*i+1] += factor*temp(0,1);
+                            }
+
+                        }
+                    }
+
+                }
+
+            }
+        }
+
+        return true;
+    }
+
+    bool CostFunctionSe2ApproxFrontEnd::testJacobian()
+    {
+        std::vector<int> block_sizes = parameter_block_sizes();
+
+        RandomGenerator r_gen;
+
+        std::vector<double*> parameters(block_sizes.size());
+        for(int i = 0; i < block_sizes.size(); ++i)
+        {
+            std::cout << "Block " << i << " size " << block_sizes[i] << std::endl;
+            parameters[i] = new double[block_sizes[i]];
+            for(int j = 0; j < block_sizes[i]; ++j)
+            {
+                parameters[i][j] = r_gen.randGauss(0,1);
+            }
+        }
+
+        double** jacobians = new double*[block_sizes.size()];
+        for(int i = 0; i < block_sizes.size(); ++i)
+        {
+            jacobians[i] = new double[block_sizes[i]*num_residuals()];
+        }
+
+        double* residuals = new double[num_residuals()];
+
+        Evaluate(parameters.data(), residuals, jacobians);
+
+        double* residuals_pert = new double[num_residuals()];
+
+        double pert = 1e-6;
+
+        for(int i = 0; i < block_sizes.size(); ++i)
+        {
+            for(int j = 0; j < block_sizes[i]; ++j)
+            {
+                parameters[i][j] += pert;
+                Evaluate(parameters.data(), residuals_pert, NULL);
+                parameters[i][j] -= pert;
+
+                std::cout << "\n\n\n\n\n\n\nBlock " << i << " parameter " << j << std::endl;
+
+                for(int k = 0; k < num_residuals(); ++k)
+                {
+                    double diff = (residuals_pert[k] - residuals[k])/pert;
+                    std::cout << "num diff: " << diff << " \t jacobians[i][j]: " << jacobians[i][k*block_sizes[i] +j] << " \t error " << diff - jacobians[i][k*block_sizes[i]+j] << std::endl;
+                }
+            }
+        }
+
+        // Free the memory
+        for(int i = 0; i < block_sizes.size(); ++i)
+        {
+            delete[] parameters[i];
+            delete[] jacobians[i];
+        }
+        delete[] jacobians;
+        delete[] residuals;
+        delete[] residuals_pert;
+    
+
+        return true;
+        
+    }
 
 
 
